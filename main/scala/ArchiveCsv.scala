@@ -1,7 +1,6 @@
 import java.io._
 import java.util.zip.{GZIPInputStream, GZIPOutputStream, ZipEntry, ZipOutputStream}
-
-import java.io.{BufferedReader, FileOutputStream, File}
+import java.io.{BufferedReader, File, FileOutputStream}
 import java.util.zip.{ZipEntry, ZipOutputStream}
 
 import org.apache.spark.sql.SQLContext
@@ -10,6 +9,9 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.fs._
 import org.apache.spark.sql.functions.input_file_name
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.fs.Path
 
 
 object ArchiveCsv {
@@ -27,7 +29,8 @@ object ArchiveCsv {
       //---------------------------------------
       //val path = "/tmp/R/ec_dev/J_CORE_SEQUENCE_ROOT_CAUSE/"
       val path = "/user/hive/warehouse/post39"
-      val out = "hdfs:///mnsent.rubcom.ch:8020/user/hive/warehouse/post39/out.gz"  //"/user/hive/warehouse/post39/out.gz"
+      //val out = "hdfs:///mnsent.rubcom.ch:8020/user/hive/warehouse/post39/out.gz"
+      val out = "/user/hive/warehouse/post39/myout.gz"
 
       readFilesInPath(path, out, sc)
     }
@@ -51,12 +54,12 @@ object ArchiveCsv {
     println("==========================================================================")
     val isMerge = false
     if(isMerge != true) {
-      //multiple .csv files and gzip it
-      //val out = "/user/hive/warehouse/post39/out.gzip"
-      //val out = "C://test//zip//"
-      zip(out, files)
+      createFile(out, files) //: FSDataOutputStream = {
+      val filename = "/user/hive/warehouse/post39/peas_small.csv"
+      readFilesAndMerge(createFile(out, files), filename)
+
+      }
     }
-  }
 
   //-------------------------------------
   // Get list of files under given path
@@ -91,7 +94,8 @@ object ArchiveCsv {
     nfiles.foreach(x => println(x))
 
     val out = "/test/zip/test.zip"
-    zip(out, nfiles)
+    //zip(out, nfiles)
+
   }
 
   //---------------------------------------------------
@@ -107,14 +111,47 @@ object ArchiveCsv {
     compressed
   }
 
-  //-----------------------------------------------------
-  // Scala doesn't support the zip, thus use java class
-  //-----------------------------------------------------
-  def zip(out: String, files: Iterable[String]) = {
+  //------------------------
+  // create file in HDFS
+  //------------------------
+  def createFile(out: String, files: Iterable[String]): FSDataOutputStream = {
+    val conf = new Configuration()
+    conf.set("fs.defaultFS", "hdfs://mnsent.rubcom.ch:8020")
+    val fs= FileSystem.get(conf)
+    val output = fs.create(new Path(out)) //"/user/hive/warehouse/post39/test.gz"))
+
+    output
+  }
+
+  def readFilesAndMerge(outputDS : FSDataOutputStream, filename : String): Unit = {
+    //in HDFS
+    val hdfs = FileSystem.get(new java.net.URI("hdfs://mnsent.rubcom.ch:8020/"), new Configuration)
+    val path = new Path("/user/hive/warehouse/post39/peas_small.csv")
+    val stream = hdfs.open(path)
+    def readLines = Stream.cons(stream.readLine, Stream.continually( stream.readLine))
+    import scala.compat.Platform.EOL
+    readLines.takeWhile(_ != null).foreach(line => {
+      outputDS.write(line.getBytes)
+      outputDS.write(EOL.getBytes)})
+
+    /* //read other file and add
+    val hdfs1 = FileSystem.get(new java.net.URI("hdfs://mnsent.rubcom.ch:8020/"), new Configuration)
+    val path1 = new Path("/user/hive/warehouse/post39/peas.csv")
+    val stream1 = hdfs1.open(path1)
+    def readLines1 = Stream.cons(stream1.readLine, Stream.continually( stream1.readLine))
+    //readLines.takeWhile(_ != null).foreach(line => println(line))
+    //readLines.takeWhile(_ != null).foreach(line => outputDS.write(line.getBytes))
+    import scala.compat.Platform.EOL
+    readLines1.takeWhile(_ != null).foreach(line => {
+      outputDS.write(line.getBytes)
+      outputDS.write(EOL.getBytes)})
+    */
+  }
+
+  def __zip(out: String, files: Iterable[String]) = {
     import java.io.{ BufferedInputStream, FileInputStream, FileOutputStream }
     import java.util.zip.{ ZipEntry, ZipOutputStream }
 
-    //create file?
     val conf = new Configuration()
     conf.set("fs.defaultFS", "hdfs://mnsent.rubcom.ch:8020")
     val fs= FileSystem.get(conf)
@@ -135,7 +172,6 @@ object ArchiveCsv {
     }
     zip.close()
   }
-
 
   def _zip(out: String, files: Iterable[String]) = {
     import java.io.{ BufferedInputStream, FileInputStream, FileOutputStream }
